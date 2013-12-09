@@ -1,0 +1,148 @@
+/*
+ *  SoundObject.cpp
+ *  SCPad
+ *
+ *  Created by machine on 2/7/11.
+ *  Copyright 2011 .. All rights reserved.
+ *
+ */
+
+#include "SoundObject.h"
+#include "G_SelectButton.h"
+#include "G_CircularRangeSlider.h"
+#include "OSC.h"
+
+SoundObject::SoundObject(){
+	button=NULL;
+	controlList=new ObjectList();
+}
+SoundObject::~SoundObject(){
+	for(int i=0; i<controlList->length(); i++){
+		this->removeNode((Node*) controlList->getObjectAt(i));
+		this->controlList->removeObjectAt(i);
+	}
+}
+
+void SoundObject::setup(){
+	active=false;
+	time=0;
+}
+void SoundObject::update(){
+	if(button!=NULL){
+		button->setPosition(x, y);
+	}
+}
+void SoundObject::draw(){
+
+}
+
+void SoundObject::setLabel(string label){
+	this->label=label;
+}
+string SoundObject::getLabel(){
+	return this->label;
+}
+void SoundObject::setControlType(string controlType){
+	this->controlType=controlType;
+	if (button!=NULL) {
+		this->removeNode(this->button);
+		this->button->onClick-= Delegate<SoundObject, int>(this, &SoundObject::onClickFunction);
+		delete this->button;
+		this->button=NULL;
+	}
+	if(controlType=="trig"){
+		this->button=new G_Button();
+	}else {
+		this->button=new G_SelectButton();
+	}
+	this->button->setFont(&font);
+	this->button->setSize(60, 60);
+	this->button->setCornerRadius(5);
+	this->button->setLabel(this->label);
+	this->button->onClick+= Delegate<SoundObject, int>(this, &SoundObject::onClickFunction);
+	this->addNode(button);
+	
+	
+}
+string SoundObject::toString(){
+	//string value ""
+	return "";
+}
+
+string SoundObject::type(){
+	return "SoundObject";
+}
+bool SoundObject::isActive(){
+	return active;
+}
+void SoundObject::setActive(bool value){
+	active=value;
+}
+void SoundObject::onClickFunction(const void* pSender, int& response){
+	time=ofGetSystemTime();
+	cout << time;
+	//send to SC soundObject activation
+	OSC* osc=OSC::getInstance();
+	ofxOscMessage m;
+	string address = "/"+this->getLabel();
+	m.setAddress(address.data());
+	
+	
+	if(this->controlType=="trig"){
+		m.addIntArg(1);
+	}else {	
+		setActive(((G_SelectButton*)this->button)->isActive());
+		m.addIntArg(isActive()?1:0);
+		//display controls:
+		for (int i=0; i<controlList->length(); i++) {
+			((G*) controlList->getObjectAt(i))->setVisible( isActive() );
+			//printf("\nclick function: %i %s %s\n", response, this->getLabel().data(), ((G*) controlList->getObjectAt(i))->isVisible()?"true":"false");
+			
+		}
+		
+	}
+	osc->sendMessage(m);
+}
+void SoundObject::onCircularRangeFunction(const void* pSender, float& response){
+	OSC* osc=OSC::getInstance();
+	ofxOscMessage m;
+	string address = "/"+this->getLabel();
+	m.setAddress(address.data());
+	m.addStringArg(((G*) pSender)->getLabel().data());
+	m.addFloatArg(0.011);
+	m.addFloatArg(0.455);
+	osc->sendMessage(m);
+}
+
+
+
+void SoundObject::addControl(string label, string type, vector<float> params){
+	bool exists=false;
+	//printf("controlList has %i controls", controlList->length());
+	for (int i=0; i<controlList->length(); i++) {
+		G* ctrl = (G*)(controlList->getObjectAt(i));
+				   
+		if (ctrl->getLabel()==label) {
+			exists=true;
+			break;
+			//TODO: update control!
+		}
+	}
+	if (!exists && type=="circularRange") {
+		G_CircularRangeSlider* control;
+		control = new G_CircularRangeSlider();
+		//control->setPosition(20, 100);
+		control->setLabel(label);
+		((G_CircularRangeSlider*) control)->setRadius(40);
+		this->addNode(control);
+		control->setup();
+		control->setVisible(false);
+		((G_CircularRangeSlider*) control)->setRange(params[0], params[1]);
+		control->onDrag+= Delegate<SoundObject, float>(this, &SoundObject::onCircularRangeFunction);
+		controlList->addObject(control);
+	}
+}
+
+void SoundObject::removeControl(int index){
+	controlList->removeObjectAt(index);
+}
